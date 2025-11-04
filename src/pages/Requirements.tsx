@@ -1,165 +1,340 @@
+import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Brain, BarChart, Zap, Shield, ChevronRight } from 'lucide-react';
+import { Button } from '@/components/ui/button';
+import { Textarea } from '@/components/ui/textarea';
+import { Send, Loader2, Play } from 'lucide-react';
+import { useToast } from '@/hooks/use-toast';
+import { identifyInstruments } from '@/components/AIRecommender/api';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import AIRecommender from "@/components/AIRecommender";
 
-const Landing = () => {
+interface IdentifiedInstrument {
+  category: string;
+  productName: string;
+  specifications: Record<string, string>;
+  sampleInput: string;
+}
+
+interface IdentifiedAccessory {
+  category: string;
+  accessoryName: string;
+  specifications: Record<string, string>;
+  sampleInput: string;
+}
+
+const Requirements = () => {
+  const [requirements, setRequirements] = useState('');
+  const [isLoading, setIsLoading] = useState(false);
+  const [instruments, setInstruments] = useState<IdentifiedInstrument[]>([]);
+  const [accessories, setAccessories] = useState<IdentifiedAccessory[]>([]);
+  const [showResults, setShowResults] = useState(false);
+  const [activeTab, setActiveTab] = useState<string>('requirements');
+  const [searchTabs, setSearchTabs] = useState<{ id: string; title: string; input: string }[]>([]);
   const navigate = useNavigate();
+  const { toast } = useToast();
 
-  const features = [
-    {
-      icon: Brain,
-      title: "Advanced AI Pipeline",
-      description: "Sophisticated multi-step analysis powered by cutting-edge machine learning algorithms"
-    },
-    {
-      icon: BarChart,
-      title: "Intelligent Analysis",
-      description: "Deep product analysis with comprehensive vendor comparison and scoring"
-    },
-    {
-      icon: Zap,
-      title: "Real-time Processing",
-      description: "Lightning-fast requirement validation and instant product recommendations"
-    },
-    {
-      icon: Shield,
-      title: "Secure & Reliable",
-      description: "Enterprise-grade security with consistent, accurate results you can trust"
+  const handleSubmit = async (e?: React.FormEvent) => {
+    if (e) e.preventDefault();
+    
+    if (!requirements.trim()) {
+      toast({
+        title: "Input Required",
+        description: "Please enter your requirements",
+        variant: "destructive",
+      });
+      return;
     }
-  ];
 
-  const productTypes = [
-    "Pressure Transmitter",
-    "Temperature Transmitter",
-    "Humidity Transmitter",
-    "Flow Meter",
-    "Level Transmitter",
-    "pH Sensors"
-  ];
+    setIsLoading(true);
+    try {
+      const response = await identifyInstruments(requirements);
+      setInstruments(response.instruments || []);
+      setAccessories(response.accessories || []);
+      setShowResults(true);
+      
+      const totalItems = (response.instruments?.length || 0) + (response.accessories?.length || 0);
+      toast({
+        title: "Success",
+        description: `Identified ${response.instruments?.length || 0} instruments and ${response.accessories?.length || 0} accessories`,
+      });
+    } catch (error: any) {
+      toast({
+        title: "Error",
+        description: error.message || "Failed to identify instruments",
+        variant: "destructive",
+      });
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const handleKeyPress = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
+    if (e.key === 'Enter' && !e.shiftKey) {
+      e.preventDefault();
+      handleSubmit();
+    }
+  };
+
+  const addSearchTab = (input: string) => {
+    const nextIndex = searchTabs.length + 1;
+    const id = `search-${Date.now()}-${nextIndex}`;
+    const title = `Search ${nextIndex}`;
+    const newTabs = [...searchTabs, { id, title, input }];
+    setSearchTabs(newTabs);
+    // Defer activating the tab to ensure Radix Tabs sees the new trigger/content
+    setTimeout(() => setActiveTab(id), 0);
+    // Optional: scroll to top so the tab content is visible
+    try { window.scrollTo({ top: 0, behavior: 'smooth' }); } catch {}
+  };
+
+  const closeSearchTab = (id: string) => {
+    const remaining = searchTabs.filter(t => t.id !== id);
+    // Renumber titles sequentially
+    const renumbered = remaining.map((t, idx) => ({ ...t, title: `Search ${idx + 1}` }));
+    setSearchTabs(renumbered);
+    if (activeTab === id) {
+      setActiveTab('requirements');
+    }
+  };
+
+  const handleRun = (instrument: IdentifiedInstrument) => {
+    addSearchTab(instrument.sampleInput);
+  };
+
+  const handleRunAccessory = (accessory: IdentifiedAccessory) => {
+    addSearchTab(accessory.sampleInput);
+  };
 
   return (
-    <div className="min-h-screen app-gradient text-foreground">
-      {/* Header */}
-      <header className="border-b border-border/60 bg-white/60 backdrop-blur-md">
-        <div className="max-w-7xl mx-auto px-6 py-4 flex items-center justify-between">
-          <div className="flex items-center space-x-2">
-            {/* <div className="w-8 h-8 rounded-md" style={{background: 'var(--gradient-primary)'}}></div> */}
-            <span className="text-xl font-bold">Controls Systems Recommender</span>
+    <div className="min-h-screen w-full bg-background">
+      <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
+        {searchTabs.length > 0 && (
+          <div className="w-full sticky top-0 z-10 bg-background/90 backdrop-blur supports-[backdrop-filter]:bg-background/70 border-b">
+            <div className="mx-auto max-w-[1400px] px-4 py-3 flex flex-wrap items-center gap-2">
+              <TabsList className="flex flex-wrap gap-2 bg-transparent p-0">
+                <TabsTrigger value="requirements" className="rounded-lg">Requirements</TabsTrigger>
+                {searchTabs.map((tab) => (
+                  <div key={tab.id} className="flex items-center">
+                    <TabsTrigger value={tab.id} className="rounded-lg">{tab.title}</TabsTrigger>
+                    <button
+                      onClick={() => closeSearchTab(tab.id)}
+                      className="ml-1 text-muted-foreground hover:text-foreground"
+                      aria-label={`Close ${tab.title}`}
+                    >
+                      ×
+                    </button>
+                  </div>
+                ))}
+              </TabsList>
+            </div>
           </div>
-          <div className="flex items-center space-x-4">
-            <button className="btn-secondary px-4 py-2" onClick={() => navigate('/login')}>Login</button>
-            <button className="btn-primary px-4 py-2" onClick={() => navigate('/signup')}>Sign Up</button>
-          </div>
-        </div>
-      </header>
+        )}
 
-      {/* Hero Section */}
-      <section className="relative overflow-hidden">
-        <div className="relative max-w-7xl mx-auto px-6 py-24 text-center">
-          <div className="w-20 h-20 mx-auto mb-8 rounded-full flex items-center justify-center shadow-md" style={{background: 'var(--gradient-primary)'}}>
-            <Brain className="w-10 h-10 text-white" />
-          </div>
-          <h1 className="text-5xl md:text-6xl font-extrabold mb-6">
-            Welcome to{' '}
-            <span className="text-gradient inline-block">
-              Controls Systems Recommender
-            </span>
-          </h1>
-          <p className="text-xl text-muted-foreground max-w-3xl mx-auto mb-10">
-            Intelligent product matching powered by an advanced AI pipeline. Describe your product requirements and get personalized recommendations with comprehensive vendor analysis.
-          </p>
-          <div className="flex flex-col sm:flex-row gap-4 justify-center">
-            <button className="btn-primary px-6 py-3 text-base inline-flex items-center justify-center" onClick={() => navigate('/signup')}>
-              Get Started
-              <ChevronRight className="ml-2 w-4 h-4" />
-            </button>
-            <button className="btn-secondary px-6 py-3 text-base" onClick={() => navigate('/login')}>
-              Sign In
-            </button>
-          </div>
-        </div>
-      </section>
-
-      {/* Features Section */}
-      <section className="py-24">
-        <div className="max-w-7xl mx-auto px-6">
-          <div className="text-center mb-16">
-            <h2 className="text-4xl font-bold mb-4 text-gradient inline-block">
-              Powerful AI-Driven Features
-            </h2>
-            <p className="text-lg text-muted-foreground">
-              Experience the next generation of product recommendation technology
+        <TabsContent value="requirements" className="m-0">
+          <div className="mx-auto max-w-[800px] px-6 min-h-screen flex items-center justify-center">
+            <div className="w-full py-6">
+          {/* Header */}
+          <div className="text-center space-y-4 mb-8">
+            <h1 className="text-4xl font-bold">
+              What are your requirements?
+            </h1>
+            <p className="text-muted-foreground text-lg">
+              Describe your Industrial Process Control System needs
             </p>
           </div>
 
-          <div className="grid md:grid-cols-2 lg:grid-cols-4 gap-8">
-            {features.map((feature, index) => (
-              <div
-                key={index}
-                className="surface-card p-6 group hover:scale-105 transition-transform duration-300"
-              >
-                <div className="text-center">
-                  <div className="w-14 h-14 mx-auto mb-4 rounded-full flex items-center justify-center shadow-sm" style={{background: 'var(--gradient-primary)'}}>
-                    <feature.icon className="w-7 h-7 text-white" />
-                  </div>
-                  <h3 className="text-lg font-semibold">{feature.title}</h3>
-                </div>
-                <div>
-                  <p className="text-muted-foreground text-center">{feature.description}</p>
+          {!showResults ? (
+            /* Input Form */
+            <form onSubmit={handleSubmit} className="space-y-6">
+              <div className="space-y-4">
+                <Textarea
+                  placeholder="Example: I need a pressure transmitter for measuring 0-100 bar with 4-20mA output and a temperature sensor for 0-200°C..."
+                  value={requirements}
+                  onChange={(e) => setRequirements(e.target.value)}
+                  onKeyDown={handleKeyPress}
+                  className="min-h-[400px] text-base resize-none rounded-xl"
+                  disabled={isLoading}
+                />
+                
+                <div className="flex justify-end">
+                  <Button
+                    type="submit"
+                    disabled={isLoading || !requirements.trim()}
+                    className="btn-primary px-8 py-6 text-lg rounded-xl"
+                  >
+                    {isLoading ? (
+                      <>
+                        <Loader2 className="mr-2 h-5 w-5 animate-spin" />
+                        Analyzing...
+                      </>
+                    ) : (
+                      <>
+                        <Send className="mr-2 h-5 w-5" />
+                        Submit
+                      </>
+                    )}
+                  </Button>
                 </div>
               </div>
-            ))}
-          </div>
-        </div>
-      </section>
-
-      {/* Product Types Section */}
-      <section className="py-24 bg-secondary">
-        <div className="max-w-7xl mx-auto px-6 text-center">
-          <h2 className="text-4xl font-bold mb-4">Supported Product Categories</h2>
-          <p className="text-lg text-muted-foreground mb-10">
-            Comprehensive analysis across various industrial sensor types
-          </p>
-          <div className="grid grid-cols-2 md:grid-cols-3 gap-6">
-            {productTypes.map((type, index) => (
-              <div
-                key={index}
-                className="rounded-lg p-4 font-medium bg-white border hover:scale-105 transition-all"
-                style={{borderColor: 'hsl(var(--border))', boxShadow: 'var(--shadow-card)'}}
-              >
-                {type}
+            </form>
+          ) : (
+            /* Results Display */
+            <div className="space-y-6">
+              <div className="flex items-center justify-between mb-6">
+                <h2 className="text-2xl font-bold">
+                   Instruments ({instruments.length})
+                </h2>
+                <Button
+                  variant="outline"
+                  onClick={() => {
+                    setShowResults(false);
+                    setInstruments([]);
+                    setAccessories([]);
+                    setRequirements('');
+                  }}
+                  className="rounded-xl"
+                >
+                  New Search
+                </Button>
               </div>
-            ))}
-          </div>
-        </div>
-      </section>
 
-      {/* CTA Section */}
-      <section className="py-24 text-center">
-        <div className="surface-card p-12 max-w-4xl mx-auto">
-          <h2 className="text-4xl font-bold mb-6 text-gradient inline-block">
-            Ready to Find Your Perfect Product?
-          </h2>
-          <p className="text-xl text-muted-foreground mb-8">
-            Join thousands of engineers who trust our Controls Systems Recommender. Product type detection will start automatically upon entering your requirements.
-          </p>
-          <div className="flex flex-col sm:flex-row gap-4 justify-center">
-            <button className="btn-primary px-6 py-3 inline-flex items-center justify-center" onClick={() => navigate('/signup')}>
-              Create Account
-              <ChevronRight className="ml-2 w-4 h-4" />
-            </button>
-            <button className="btn-secondary px-6 py-3" onClick={() => navigate('/login')}>
-              I Already Have an Account
-            </button>
-          </div>
-        </div>
-      </section>
+              {/* Instruments Section */}
+              {instruments.length > 0 && (
+                <div className="space-y-4">
+                  <h3 className="text-lg font-semibold text-primary">Instruments</h3>
+                  {instruments.map((instrument, index) => (
+                    <div
+                      key={index}
+                      className="border rounded-xl p-6 space-y-4 hover:shadow-lg transition-shadow"
+                    >
+                      {/* Category and Product Name */}
+                      <div className="flex items-start justify-between">
+                        <div className="space-y-1">
+                          <h3 className="text-xl font-semibold">
+                            {instrument.category}
+                          </h3>
+                          <p className="text-muted-foreground">
+                            {instrument.productName}
+                          </p>
+                        </div>
+                        <Button
+                          onClick={() => handleRun(instrument)}
+                          className="btn-primary rounded-xl px-6"
+                        >
+                          <Play className="mr-2 h-4 w-4" />
+                          Search
+                        </Button>
+                      </div>
 
-      {/* Footer */}
-      <footer className="border-t border-border py-8 text-muted-foreground text-sm text-center">
-        © 2024 AI Product Recommender. Powered by advanced AI pipeline.
-      </footer>
+                      {/* Specifications */}
+                      {Object.keys(instrument.specifications).length > 0 && (
+                        <div className="space-y-2">
+                          <h4 className="font-medium text-sm text-muted-foreground">
+                            Specifications:
+                          </h4>
+                          <div className="grid grid-cols-2 gap-3">
+                            {Object.entries(instrument.specifications).map(([key, value]) => (
+                              <div key={key} className="text-sm">
+                                <span className="font-medium">{key}:</span>{' '}
+                                <span className="text-muted-foreground">{value}</span>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+
+                      {/* Sample Input Preview */}
+                      <div className="pt-3 border-t">
+                        <p className="text-xs text-muted-foreground mb-2">Sample Input:</p>
+                        <p className="text-sm bg-muted p-3 rounded-lg font-mono">
+                          {instrument.sampleInput}
+                        </p>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+              <h2 className="text-2xl font-bold">
+                   Accessories ({accessories.length})
+                </h2>
+              {/* Accessories Section */}
+              {accessories.length > 0 && (
+                <div className="space-y-4 mt-8">
+                  <h3 className="text-lg font-semibold text-primary">Accessories</h3>
+                  {accessories.map((accessory, index) => (
+                    <div
+                      key={index}
+                      className="border border-dashed rounded-xl p-6 space-y-4 hover:shadow-lg transition-shadow bg-muted/30"
+                    >
+                      {/* Category and Accessory Name */}
+                      <div className="flex items-start justify-between">
+                        <div className="space-y-1">
+                          <h3 className="text-xl font-semibold">
+                            {accessory.category}
+                          </h3>
+                          <p className="text-muted-foreground">
+                            {accessory.accessoryName}
+                          </p>
+                        </div>
+                        <Button
+                          onClick={() => handleRunAccessory(accessory)}
+                          className="btn-primary rounded-xl px-6"
+                        >
+                          <Play className="mr-2 h-4 w-4" />
+                          Search
+                        </Button>
+                      </div>
+
+                      {/* Specifications */}
+                      {Object.keys(accessory.specifications).length > 0 && (
+                        <div className="space-y-2">
+                          <h4 className="font-medium text-sm text-muted-foreground">
+                            Specifications:
+                          </h4>
+                          <div className="grid grid-cols-2 gap-3">
+                            {Object.entries(accessory.specifications).map(([key, value]) => (
+                              <div key={key} className="text-sm">
+                                <span className="font-medium">{key}:</span>{' '}
+                                <span className="text-muted-foreground">{value}</span>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+
+                      {/* Sample Input Preview */}
+                      <div className="pt-3 border-t">
+                        <p className="text-xs text-muted-foreground mb-2">Sample Input:</p>
+                        <p className="text-sm bg-muted p-3 rounded-lg font-mono">
+                          {accessory.sampleInput}
+                        </p>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
+            </div>
+          </div>
+        </TabsContent>
+
+        {searchTabs.map((tab) => (
+          <TabsContent 
+            key={tab.id} 
+            value={tab.id} 
+            className="m-0"
+            forceMount
+            style={{ display: activeTab === tab.id ? 'block' : 'none' }}
+          >
+            <div className="h-[calc(100vh-56px)]">
+              <AIRecommender key={tab.id} initialInput={tab.input} fillParent />
+            </div>
+          </TabsContent>
+        ))}
+      </Tabs>
     </div>
   );
 };
 
-export default Landing;
+export default Requirements;
